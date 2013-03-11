@@ -13,7 +13,15 @@
 - (void)perform {
     UIViewController *src = (UIViewController *) self.sourceViewController;
     UIViewController *dst = (UIViewController *) self.destinationViewController;
-    [src.sidePanelController setCenterPanel:dst];
+    JASidePanelController *sidePC = src.sidePanelController;
+    Class navigationController = [UINavigationController class];
+    if (![dst isKindOfClass:navigationController] && [sidePC.centerPanel isKindOfClass:navigationController]) {
+        UINavigationController *navigationController = (UINavigationController*)sidePC.centerPanel;
+        [navigationController pushViewController:dst animated:YES];
+        [sidePC showCenterPanel:YES];
+    } else {
+        [sidePC setCenterPanel:dst];
+    }
 }
 
 @end
