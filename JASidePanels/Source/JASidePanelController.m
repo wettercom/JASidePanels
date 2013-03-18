@@ -73,9 +73,12 @@ static char ja_kvoContext;
 @synthesize allowRightOverpan = _allowRightOverpan;
 @synthesize bounceOnSidePanelOpen = _bounceOnSidePanelOpen;
 @synthesize bounceOnSidePanelClose = _bounceOnSidePanelClose;
+@synthesize bounceOnCenterPanelChange = _bounceOnCenterPanelChange;
 @synthesize visiblePanel = _visiblePanel;
 @synthesize shouldDelegateAutorotateToVisiblePanel = _shouldDelegateAutorotateToVisiblePanel;
 @synthesize centerPanelHidden = _centerPanelHidden;
+@synthesize allowLeftSwipe = _allowLeftSwipe;
+@synthesize allowRightSwipe = _allowRightSwipe;
 
 #pragma mark - Icon
 
@@ -105,8 +108,10 @@ static char ja_kvoContext;
 #pragma mark - NSObject
 
 - (void)dealloc {
-    [_centerPanel removeObserver:self forKeyPath:@"view"];
-    [_centerPanel removeObserver:self forKeyPath:@"viewControllers"];
+    if (_centerPanel) {
+        [_centerPanel removeObserver:self forKeyPath:@"view"];
+        [_centerPanel removeObserver:self forKeyPath:@"viewControllers"];
+    }
 }
 
 //Support creating from Storyboard
@@ -137,7 +142,11 @@ static char ja_kvoContext;
     self.allowLeftOverpan = YES;
     self.allowRightOverpan = YES;
     self.bounceOnSidePanelOpen = YES;
+    self.bounceOnSidePanelClose = NO;
+    self.bounceOnCenterPanelChange = YES;
     self.shouldDelegateAutorotateToVisiblePanel = YES;
+    self.allowRightSwipe = YES;
+    self.allowLeftSwipe = YES;
 }
 
 #pragma mark - UIViewController
@@ -182,7 +191,7 @@ static char ja_kvoContext;
     [self _adjustCenterFrame]; //Account for possible rotation while view appearing
 }
 
-#if __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_6_0
+#if !defined(__IPHONE_6_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_6_0
 
 - (void)viewDidUnload {
     [super viewDidUnload];
@@ -352,9 +361,11 @@ static char ja_kvoContext;
         JASidePanelState previousState = self.state;
         self.state = JASidePanelCenterVisible;
         [UIView animateWithDuration:0.2f animations:^{
-            // first move the centerPanel offscreen
-            CGFloat x = (previousState == JASidePanelLeftVisible) ? self.view.bounds.size.width : -self.view.bounds.size.width;
-            _centerPanelRestingFrame.origin.x = x;
+            if (self.bounceOnCenterPanelChange) {
+                // first move the centerPanel offscreen
+                CGFloat x = (previousState == JASidePanelLeftVisible) ? self.view.bounds.size.width : -self.view.bounds.size.width;
+                _centerPanelRestingFrame.origin.x = x;
+            }
             self.centerPanelContainer.frame = _centerPanelRestingFrame;
         } completion:^(__unused BOOL finished) {
             [self _swapCenter:previous with:_centerPanel];
@@ -422,7 +433,7 @@ static char ja_kvoContext;
                 buttonController = [nav.viewControllers objectAtIndex:0];
             }
         }
-        if (!buttonController.navigationItem.leftBarButtonItem) {
+        if (!buttonController.navigationItem.leftBarButtonItem) {   
             buttonController.navigationItem.leftBarButtonItem = [self leftButtonForCenterPanel];
         }
     }	
@@ -438,6 +449,14 @@ static char ja_kvoContext;
     } else if ([gestureRecognizer isKindOfClass:[UIPanGestureRecognizer class]]) {
         UIPanGestureRecognizer *pan = (UIPanGestureRecognizer *)gestureRecognizer;
         CGPoint translate = [pan translationInView:self.centerPanelContainer];
+        // determine if right swipe is allowed
+        if (translate.x < 0 && ! self.allowRightSwipe) {
+            return NO;
+        }
+        // determine if left swipe is allowed
+        if (translate.x > 0 && ! self.allowLeftSwipe) {
+            return NO;
+        }
         BOOL possible = translate.x != 0 && ((fabsf(translate.y) / fabsf(translate.x)) < 1.0f);
         if (possible && ((translate.x > 0 && self.leftPanel) || (translate.x < 0 && self.rightPanel))) {
             return YES;
@@ -457,6 +476,10 @@ static char ja_kvoContext;
 }
 
 - (void)_handlePan:(UIGestureRecognizer *)sender {
+	if (!_recognizesPanGesture) {
+		return;
+	}
+	
     if ([sender isKindOfClass:[UIPanGestureRecognizer class]]) {
         UIPanGestureRecognizer *pan = (UIPanGestureRecognizer *)sender;
         
@@ -562,9 +585,13 @@ static char ja_kvoContext;
     if (self.state == JASidePanelCenterVisible) {
         if ((position > 0.0f && !self.leftPanel) || (position < 0.0f && !self.rightPanel)) {
             return 0.0f;
+        } else if (!self.allowLeftOverpan && position > self.leftVisibleWidth) {
+            return self.leftVisibleWidth;
+        } else if (!self.allowRightOverpan && position < -self.rightVisibleWidth) {
+            return -self.rightVisibleWidth;
         }
     } else if (self.state == JASidePanelRightVisible && !self.allowRightOverpan) {
-        if ((position + _centerPanelRestingFrame.size.width) < (self.rightPanelContainer.frame.size.width - self.rightVisibleWidth)) {
+        if (position < -self.rightVisibleWidth) {
             return 0.0f;
         } else if (position > self.rightPanelContainer.frame.origin.x) {
             return self.rightPanelContainer.frame.origin.x - _centerPanelRestingFrame.origin.x;
@@ -573,7 +600,7 @@ static char ja_kvoContext;
         if (position > self.leftVisibleWidth) {
             return 0.0f;
         } else if (position < self.leftPanelContainer.frame.origin.x) {
-            return  self.leftPanelContainer.frame.origin.x - _centerPanelRestingFrame.origin.x;
+            return self.leftPanelContainer.frame.origin.x - _centerPanelRestingFrame.origin.x;
         }
     }
     return movement;
@@ -889,14 +916,26 @@ static char ja_kvoContext;
 }
 
 - (void)showLeftPanel:(BOOL)animated {
-    [self _showLeftPanel:animated bounce:NO];
+    [self showLeftPanelAnimated:animated];
 }
 
 - (void)showRightPanel:(BOOL)animated {
-    [self _showRightPanel:animated bounce:NO];
+    [self showRightPanelAnimated:animated];
 }
 
 - (void)showCenterPanel:(BOOL)animated {
+    [self showCenterPanelAnimated:animated];
+}
+
+- (void)showLeftPanelAnimated:(BOOL)animated {
+    [self _showLeftPanel:animated bounce:NO];
+}
+
+- (void)showRightPanelAnimated:(BOOL)animated {
+    [self _showRightPanel:animated bounce:NO];
+}
+
+- (void)showCenterPanelAnimated:(BOOL)animated {
     // make sure center panel isn't hidden
     if (_centerPanelHidden) {
         _centerPanelHidden = NO;
@@ -947,9 +986,9 @@ static char ja_kvoContext;
             [self _unhideCenterPanel];
             [UIView animateWithDuration:duration animations:^{
                 if (self.state == JASidePanelLeftVisible) {
-                    [self showLeftPanel:NO];
+                    [self showLeftPanelAnimated:NO];
                 } else {
-                    [self showRightPanel:NO];
+                    [self showRightPanelAnimated:NO];
                 }
                 if (self.shouldResizeLeftPanel || self.shouldResizeRightPanel) {
                     [self _layoutSidePanels];
