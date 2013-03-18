@@ -18,7 +18,7 @@
     if (![dst isKindOfClass:navigationController] && [sidePC.centerPanel isKindOfClass:navigationController]) {
         UINavigationController *navigationController = (UINavigationController*)sidePC.centerPanel;
         [navigationController pushViewController:dst animated:YES];
-        [sidePC showCenterPanel:YES];
+        [sidePC showCenterPanelAnimated:YES];
     } else {
         [sidePC setCenterPanel:dst];
     }
