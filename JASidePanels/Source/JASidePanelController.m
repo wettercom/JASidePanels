@@ -857,7 +857,12 @@ static char ja_kvoContext;
     
     self.tapView = nil;
     [self _toggleScrollsToTopForCenter:YES left:NO right:NO];
+    
+    if (!([self.centerPanel isKindOfClass:[UINavigationController class]] && [((UINavigationController*)self.centerPanel).topViewController isKindOfClass:[WETVideoTVC class]])) {
+        [self setCenterPanel:self.centerPanel];
+    }
 }
+
 
 - (void)_hideCenterPanel {
     self.centerPanelContainer.hidden = YES;
