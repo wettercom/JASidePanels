@@ -562,7 +562,7 @@ static char ja_kvoContext;
 #pragma mark - Tap Gesture
 
 - (void)setTapView:(UIView *)tapView {
-    if (tapView != _tapView) {
+    if (tapView && tapView != _tapView) {
         [_tapView removeFromSuperview];
         _tapView = tapView;
         if (_tapView) {
